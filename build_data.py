@@ -1,51 +1,78 @@
 """
-将 sanhu_expt_prompt.py 生成的 md 文件解析，生成可直接访问的 index.html
+解析 prompt_template/ 目录下的 md 文件，生成可直接访问的 index.html
 运行：python build_data.py
 """
 import re
 import glob
 import json
+import os
 from datetime import datetime
 
-# 1. 找最新的 md 文件
-md_files = glob.glob("sanhu_prompts_*.md")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(script_dir, "prompt_template")
+
+# 1. 找所有模板文件，按文件名排序保证节点顺序
+md_files = sorted(glob.glob(os.path.join(template_dir, "*_template.md")))
 if not md_files:
-    print("错误：未找到 sanhu_prompts_*.md，请先运行 sanhu_expt_prompt.py")
+    print(f"错误：未找到模板文件，请检查目录 {template_dir}")
     exit(1)
-latest_md = max(md_files)
-print(f"读取：{latest_md}")
+print(f"找到 {len(md_files)} 个模板文件")
 
-# 2. 解析 md
-with open(latest_md, "r", encoding="utf-8") as f:
-    content = f.read()
-
-# 按节点分块，再逐条提取
+# 2. 解析每个模板文件
+# 格式：# 节点：XXX｜提示词模板
+#       ## 问题N｜频次
+#       **"问题文本"**
+#       ```提示词内容```
 prompts = []
-# 匹配格式：## 节点名\n\n### [频次] 问题\n\n提示词内容\n\n---
-blocks = re.split(r"\n## ", content)
-for block in blocks[1:]:  # 跳过文件头
-    lines = block.strip().split("\n")
-    node = lines[0].strip()
-    # 在每个节点块内找所有提示词条目
-    entries = re.split(r"\n### ", block)
-    for entry in entries[1:]:
-        entry = entry.strip()
-        # 第一行是 [频次] 问题
-        first_line_match = re.match(r"\[(.*?)\] (.*?)\n", entry)
-        if not first_line_match:
+
+for md_path in md_files:
+    with open(md_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 从文件名或 h1 标题提取节点名
+    h1_match = re.search(r"^# 节点：(.+?)｜", content, re.MULTILINE)
+    if h1_match:
+        node = h1_match.group(1).strip()
+    else:
+        # 降级：从文件名提取，如 04_买入建仓_template.md -> 买入建仓
+        basename = os.path.basename(md_path)
+        node = re.sub(r"^\d+_(.+)_template\.md$", r"\1", basename)
+
+    # 按 ## 问题N｜频次 分块
+    blocks = re.split(r"\n## ", content)
+    for block in blocks[1:]:
+        # 第一行：问题N｜频次
+        first_line = block.split("\n")[0].strip()
+        freq_match = re.search(r"[｜|](.+)$", first_line)
+        frequency = freq_match.group(1).strip() if freq_match else "未知"
+
+        # 问题文本：**"..."**
+        q_match = re.search(r'\*\*[「""](.+?)[」""]\*\*', block)
+        if not q_match:
+            # 兼容无引号格式 **问题文本**
+            q_match = re.search(r'\*\*(.+?)\*\*', block)
+        if not q_match:
             continue
-        frequency = first_line_match.group(1).strip()
-        question = first_line_match.group(2).strip()
-        # 剩余内容是提示词（去掉末尾的 ---）
-        rest = entry[first_line_match.end():].strip()
-        prompt_text = re.sub(r"\n---\s*$", "", rest).strip()
-        if prompt_text and not prompt_text.startswith("⚠️"):
+        question = q_match.group(1).strip()
+
+        # 提示词：``` ... ``` 代码块内容
+        code_match = re.search(r"```\n([\s\S]+?)\n```", block)
+        if not code_match:
+            continue
+        prompt_text = code_match.group(1).strip()
+
+        # 去掉末尾免责声明行
+        prompt_text = re.sub(r"\n本回答由 AI 生成.*$", "", prompt_text).strip()
+
+        if prompt_text:
             prompts.append({
                 "node": node,
                 "frequency": frequency,
                 "question": question,
-                "prompt": prompt_text
+                "prompt": prompt_text,
             })
+
+    print(f"  {os.path.basename(md_path)} → 节点「{node}」{sum(1 for p in prompts if p['node'] == node)} 条")
 
 print(f"解析到 {len(prompts)} 条提示词")
 if not prompts:
