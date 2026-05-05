@@ -217,6 +217,25 @@ function applyFilters(node, keyword) {{
     renderCards(data);
 }}
 
+// clipboard 兼容方案：优先用现代 API，降级用 execCommand
+function copyText(text) {{
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+        return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy(text));
+    }}
+    return Promise.resolve(fallbackCopy(text));
+}}
+function fallbackCopy(text) {{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+}}
+
 // 展开 / 复制 / 跳转
 document.addEventListener('click', e => {{
     const btn = e.target.closest('.btn');
@@ -232,14 +251,15 @@ document.addEventListener('click', e => {{
         btn.textContent = box.classList.contains('show') ? '收起提示词' : '展开提示词';
     }}
     if (btn.classList.contains('btn-copy')) {{
-        navigator.clipboard.writeText(item.prompt).then(() => {{
-            btn.textContent = '✅ 已复制';
-            setTimeout(() => btn.textContent = '复制', 1500);
+        copyText(item.prompt).then(ok => {{
+            btn.textContent = ok ? '✅ 已复制' : '⚠️ 请手动复制';
+            setTimeout(() => btn.textContent = '复制', 2000);
         }});
     }}
     if (btn.classList.contains('btn-yuanbao')) {{
-        navigator.clipboard.writeText(item.prompt);
-        window.open('https://chat.deepseek.com/', '_blank');
+        copyText(item.prompt).then(() => {{
+            window.open('https://chat.deepseek.com/', '_blank');
+        }});
     }}
 }});
 </script>
