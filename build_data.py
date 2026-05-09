@@ -157,6 +157,9 @@ html = f"""<!DOCTYPE html>
         .expert-hint {{font-size:12px;color:#b45309;margin-left:auto;white-space:nowrap;}}
         .expert-preview {{flex-basis:100%;font-size:12px;color:#666;line-height:1.7;margin-top:6px;padding:10px 12px;background:#fffbeb;border-radius:6px;display:none;}}
         .expert-preview.show {{display:block;}}
+        .subst-stock {{background:#dcfce7;color:#15803d;padding:0 3px;border-radius:3px;font-weight:500;}}
+        .subst-expert {{background:#fef3c7;color:#b45309;padding:0 3px;border-radius:3px;}}
+        .subst-pending {{background:#f1f5f9;color:#64748b;padding:0 3px;border-radius:3px;font-family:monospace;font-size:12px;}}
         @media(max-width:600px){{
             body{{padding:12px;}}
             .filter-btn{{padding:5px 10px;font-size:12px;}}
@@ -252,13 +255,60 @@ function renderCards(data) {{
                 <button class="btn btn-copy" data-i="${{i}}">复制</button>
                 <button class="btn btn-yuanbao" data-i="${{i}}">去 DeepSeek 用 →</button>
             </div>
-            <div class="prompt-box" id="pb-${{i}}">${{item.prompt}}</div>
+            <div class="prompt-box" id="pb-${{i}}">${{renderPromptHTML(item.prompt)}}</div>
         `;
         container.appendChild(card);
     }});
     // 保存当前渲染的数据引用，供点击事件使用
     container._data = data;
 }}
+
+// 把提示词渲染成带高亮的 HTML：股票名/代码/专家视角的替换处加高亮
+function renderPromptHTML(text) {{
+    const name = document.getElementById('stockName').value.trim();
+    const code = document.getElementById('stockCode').value.trim();
+    const expertBody = expertList[expertSelect.value]?.body || '';
+    const expertLabel = expertList[expertSelect.value]?.label || '';
+
+    // 先转义 HTML 再做替换
+    let html = escapeHtml(text);
+
+    if (name) {{
+        html = html.split('{{股票名称}}').join(`<span class="subst-stock">${{escapeHtml(name)}}</span>`);
+    }} else {{
+        html = html.split('{{股票名称}}').join(`<span class="subst-pending">{{股票名称}}</span>`);
+    }}
+    if (code) {{
+        html = html.split('{{股票代码}}').join(`<span class="subst-stock">${{escapeHtml(code)}}</span>`);
+    }} else {{
+        html = html.split('{{股票代码}}').join(`<span class="subst-pending">{{股票代码}}</span>`);
+    }}
+    if (expertBody) {{
+        const tag = `<span class="subst-expert" title="来自：${{escapeHtml(expertLabel)}}">${{escapeHtml(expertBody)}}</span>`;
+        html = html.split('{{专家视角}}').join(tag);
+    }} else {{
+        html = html.split('{{专家视角}}').join(`<span class="subst-pending">{{专家视角}}（当前：未指定）</span>`);
+    }}
+    return html;
+}}
+
+function escapeHtml(s) {{
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}}
+
+// 当输入/下拉变化时，只更新已渲染卡片的预览框内容（保留展开/滚动状态）
+function refreshPromptBoxes() {{
+    const container = document.getElementById('cardList');
+    const data = container._data || [];
+    data.forEach((item, i) => {{
+        const box = document.getElementById('pb-' + i);
+        if (box) box.innerHTML = renderPromptHTML(item.prompt);
+    }});
+}}
+
+document.getElementById('stockName').addEventListener('input', refreshPromptBoxes);
+document.getElementById('stockCode').addEventListener('input', refreshPromptBoxes);
+expertSelect.addEventListener('change', refreshPromptBoxes);
 
 renderCards(promptData);
 

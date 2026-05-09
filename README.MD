@@ -44,6 +44,12 @@ bash install.sh all       # 全部安装
 /gu/profit-q1 贵州茅台 600519 赚了5个点
 ```
 
+每个命令背后都是一套结构化的提示词模板，AI 会按预设的分析维度输出结论：
+
+<p align="center">
+  <img src="imgs/prompt_template.png" alt="提示词模板示例" width="800">
+</p>
+
 ---
 
 ## 11个交易节点 · 83个问题
@@ -135,6 +141,25 @@ bash render.sh buy-q1 统联精密 301168
 ├── sanhu_expt_prompt.py        # 用 DeepSeek 批量生成提示词
 └── build_data.py               # 生成 index.html 静态检索页
 ```
+
+---
+
+## 关注作者
+
+左边是公众号，更新项目动态与 AI × A股 的实战内容；右边是我的个人微信，交流、反馈、提 bug 都欢迎。
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="imgs/gongzhonghao.jpg" alt="微信公众号" width="200"><br>
+      <sub>微信公众号</sub>
+    </td>
+    <td align="center">
+      <img src="imgs/kefu.png" alt="个人微信" width="200"><br>
+      <sub>个人微信（交流 / 反馈）</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
