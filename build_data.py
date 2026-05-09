@@ -10,6 +10,7 @@ from datetime import datetime
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(script_dir, "prompt_template")
+expert_dir = os.path.join(script_dir, "expert_views")
 
 # 1. 找所有模板文件，按文件名排序保证节点顺序
 md_files = sorted(glob.glob(os.path.join(template_dir, "*_template.md")))
@@ -18,7 +19,28 @@ if not md_files:
     exit(1)
 print(f"找到 {len(md_files)} 个模板文件")
 
-# 2. 解析每个模板文件
+# 2. 加载 expert_views/*.md 里的"一段话压缩"段落，供前端切换
+def load_expert_view(slug: str, label: str) -> str:
+    path = os.path.join(expert_dir, f"{slug}.md")
+    if not os.path.exists(path):
+        return ""
+    text = open(path, "r", encoding="utf-8").read()
+    # 抓取 "## 一段话压缩" 下面的第一段
+    m = re.search(r"## 一段话压缩[^\n]*\n+([^\n#][^\n]*(?:\n[^\n#][^\n]*)*)", text)
+    if not m:
+        print(f"  警告：{label}（{slug}）未解析到'一段话压缩'段，跳过。")
+        return ""
+    return m.group(1).strip()
+
+EXPERTS = [
+    {"slug": "",               "label": "不指定（通用分析师）", "body": ""},
+    {"slug": "duan-yongping",  "label": "段永平",             "body": load_expert_view("duan-yongping", "段永平")},
+    {"slug": "dan-bin",        "label": "但斌",               "body": load_expert_view("dan-bin", "但斌")},
+    {"slug": "li-lu",          "label": "李录",               "body": load_expert_view("li-lu", "李录")},
+]
+print(f"已加载 {sum(1 for e in EXPERTS if e['body'])} 份专家视角")
+
+# 3. 解析每个模板文件
 # 格式：# 节点：XXX｜提示词模板
 #       ## 问题N｜频次
 #       **"问题文本"**
@@ -79,8 +101,9 @@ if not prompts:
     print("警告：未解析到任何数据，请检查 md 文件格式")
     exit(1)
 
-# 3. 生成 HTML
+# 4. 生成 HTML
 data_json = json.dumps(prompts, ensure_ascii=False, indent=2)
+experts_json = json.dumps(EXPERTS, ensure_ascii=False, indent=2)
 gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 html = f"""<!DOCTYPE html>
@@ -121,6 +144,19 @@ html = f"""<!DOCTYPE html>
         .prompt-box.show {{display:block;}}
         .empty {{text-align:center;padding:60px;color:#aaa;font-size:15px;}}
         .footer {{margin-top:40px;text-align:center;font-size:12px;color:#bbb;padding-bottom:20px;}}
+        .stock-bar {{display:flex;gap:10px;align-items:center;background:#fff;border:1px solid #e0e7ff;border-radius:10px;padding:12px 16px;margin-bottom:14px;flex-wrap:wrap;}}
+        .stock-bar label {{font-size:13px;color:#555;white-space:nowrap;}}
+        .stock-input {{flex:1;min-width:80px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;outline:none;}}
+        .stock-input:focus {{border-color:#2563eb;}}
+        .stock-hint {{font-size:12px;color:#aaa;margin-left:auto;white-space:nowrap;}}
+        .placeholder-tag {{display:inline-block;background:#e0e7ff;color:#3730a3;border-radius:3px;padding:0 3px;font-family:monospace;font-size:12px;}}
+        .expert-bar {{display:flex;gap:10px;align-items:center;background:#fff;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-bottom:14px;flex-wrap:wrap;}}
+        .expert-bar label {{font-size:13px;color:#555;white-space:nowrap;font-weight:500;}}
+        .expert-select {{padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;outline:none;min-width:200px;background:#fff;}}
+        .expert-select:focus {{border-color:#d97706;}}
+        .expert-hint {{font-size:12px;color:#b45309;margin-left:auto;white-space:nowrap;}}
+        .expert-preview {{flex-basis:100%;font-size:12px;color:#666;line-height:1.7;margin-top:6px;padding:10px 12px;background:#fffbeb;border-radius:6px;display:none;}}
+        .expert-preview.show {{display:block;}}
         @media(max-width:600px){{
             body{{padding:12px;}}
             .filter-btn{{padding:5px 10px;font-size:12px;}}
@@ -135,6 +171,18 @@ html = f"""<!DOCTYPE html>
     </div>
 
     <input class="search-input" id="searchInput" placeholder="🔍 搜索问题或关键词...">
+    <div class="expert-bar">
+        <label>专家视角</label>
+        <select class="expert-select" id="expertSelect"></select>
+        <span class="expert-hint">切换后，复制的提示词自动带上这位投资人的思考立场</span>
+        <div class="expert-preview" id="expertPreview"></div>
+    </div>
+    <div class="stock-bar">
+        <label>分析标的</label>
+        <input class="stock-input" id="stockName" placeholder="股票名称，如 贵州茅台" style="max-width:180px;">
+        <input class="stock-input" id="stockCode" placeholder="股票代码，如 600519" style="max-width:130px;">
+        <span class="stock-hint">填入后复制的提示词自动替换 <span class="placeholder-tag">{{{{股票名称}}}}</span> <span class="placeholder-tag">{{{{股票代码}}}}</span></span>
+    </div>
     <div class="filter-wrap" id="filterWrap"></div>
     <div class="stats" id="stats"></div>
     <div class="card-list" id="cardList"></div>
@@ -143,6 +191,28 @@ html = f"""<!DOCTYPE html>
 
 <script>
 const promptData = {data_json};
+const expertList = {experts_json};
+
+// 初始化专家下拉
+const expertSelect = document.getElementById('expertSelect');
+expertList.forEach((e, i) => {{
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = e.label;
+    expertSelect.appendChild(opt);
+}});
+const expertPreview = document.getElementById('expertPreview');
+function renderExpertPreview() {{
+    const e = expertList[expertSelect.value];
+    if (e && e.body) {{
+        expertPreview.textContent = e.body;
+        expertPreview.classList.add('show');
+    }} else {{
+        expertPreview.classList.remove('show');
+    }}
+}}
+expertSelect.addEventListener('change', renderExpertPreview);
+renderExpertPreview();
 
 // 统计节点
 const nodeCount = {{}};
@@ -236,6 +306,17 @@ function fallbackCopy(text) {{
     return ok;
 }}
 
+// 用用户输入替换提示词中的占位符
+function applyStock(text) {{
+    const name = document.getElementById('stockName').value.trim();
+    const code = document.getElementById('stockCode').value.trim();
+    if (name) text = text.split('{{股票名称}}').join(name);
+    if (code) text = text.split('{{股票代码}}').join(code);
+    const expertBody = expertList[expertSelect.value]?.body || '';
+    text = text.split('{{专家视角}}').join(expertBody);
+    return text;
+}}
+
 // 展开 / 复制 / 跳转
 document.addEventListener('click', e => {{
     const btn = e.target.closest('.btn');
@@ -251,13 +332,13 @@ document.addEventListener('click', e => {{
         btn.textContent = box.classList.contains('show') ? '收起提示词' : '展开提示词';
     }}
     if (btn.classList.contains('btn-copy')) {{
-        copyText(item.prompt).then(ok => {{
+        copyText(applyStock(item.prompt)).then(ok => {{
             btn.textContent = ok ? '✅ 已复制' : '⚠️ 请手动复制';
             setTimeout(() => btn.textContent = '复制', 2000);
         }});
     }}
     if (btn.classList.contains('btn-yuanbao')) {{
-        copyText(item.prompt).then(() => {{
+        copyText(applyStock(item.prompt)).then(() => {{
             window.open('https://chat.deepseek.com/', '_blank');
         }});
     }}
