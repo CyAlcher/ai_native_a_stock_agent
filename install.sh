@@ -5,7 +5,7 @@
 # 用法：bash install.sh [--tool claude|codex|gemini|cursor|all]
 # ============================================================
 
-set -e
+set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMANDS_SRC="$REPO_DIR/.claude/commands/gu"
@@ -49,8 +49,6 @@ install_codex() {
     info "安装到 Codex CLI → $DEST"
     mkdir -p "$DEST"
     cp -r "$COMMANDS_SRC/." "$DEST/"
-    # Codex 用 AGENTS.md 作为项目入口
-    cp "$REPO_DIR/AGENTS.md" "$REPO_DIR/AGENTS.md"
     success "Codex CLI 安装完成（$(ls "$DEST" | wc -l | tr -d ' ') 个命令）"
     echo "   使用方式：在项目目录下运行 codex，直接输入问题即可"
 }
